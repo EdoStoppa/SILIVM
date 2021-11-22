@@ -2,16 +2,14 @@ open List
 
 (* controllare type_of_exps *)
 (* Next steps:
-    - Aggiungere vector type
-    - type checking vector type
-    - Aggiungere op base vector to eval
-    - Aggiungere operazioni fra tipi misti per vector <- tempo stimato 2 settimane
-    - Matrici (idem sopra)
+    - Fix return typecheck
+    - Extensive Testing!!!!!
+    - Matrices
 *)
 
 type ident = string
 
-type exp = Var of ident | Num of int | Bool of bool
+type exp = Var of ident | Num of int | Bool of bool | Vec of int list
          | Add of exp * exp | Sub of exp * exp | Mul of exp * exp
          | And of exp * exp | Or of exp * exp | Eq of exp * exp 
 
@@ -19,9 +17,11 @@ type cmd = Assign of ident * exp | Seq of cmd * cmd | Skip
          | IfC of exp * cmd * cmd | While of exp * cmd
          | Call of ident * ident * exp list | Return of exp
 
-type value = IntVal of int | BoolVal of bool
+type value = IntVal of int | BoolVal of bool | VecVal of int list
 
-type typ = IntTy | BoolTy | FunTy of typ * typ list
+type typ = IntTy | BoolTy | FunTy of typ * typ list | VecTy
+
+
 
 (* State definition *)
 type entry = Val of value | Fun of ident list * cmd
@@ -30,28 +30,109 @@ let empty_state = fun x -> None
 let lookup_state (s : state) (x : ident) : entry option = s x
 let update_state (s : state) (x : ident) (e : entry) : state = fun y -> if y = x then Some e else s y
 
+
+
 (* Context definition*) 
 type context = ident -> typ option
 let empty_context = fun x -> None
 let lookup_context (gamma : context) (x : ident) : typ option = gamma x
 let update_context (gamma : context) (x : ident) (t : typ) : context = fun y -> if y = x then Some t else gamma y
 
+
+
+(* Vector helper functions *)
+
+(* Get nth element from Vec *)
+let val_at_idx (Vec v) (idx : int) : int option = nth_opt v idx
+
+(* Mixed operations between integers and vectors *)
+
+(* Addition integer vector *)
+let rec add_int_vec_aux (i: int) (v : int list) (ret : int list): int list = 
+    match v with
+    | [] -> rev ret
+    | h :: rest -> add_int_vec_aux i rest ((h+i) :: ret)
+
+let add_int_vec (i: int) (v : int list) : int list = 
+    add_int_vec_aux i v []
+
+(* Subtraction integer vector *)
+let rec sub_int_vec_aux (i: int) (v : int list) (ret : int list): int list = 
+    match v with
+    | [] -> rev ret
+    | h :: rest -> sub_int_vec_aux i rest ((h-i) :: ret)
+
+let sub_int_vec (i: int) (v : int list) : int list = 
+    sub_int_vec_aux i v []
+
+(* Multiplication integer vector *)
+let rec mul_int_vec_aux (i: int) (v : int list) (ret : int list): int list = 
+    match v with
+    | [] -> rev ret
+    | h :: rest -> mul_int_vec_aux i rest ((h*i) :: ret)
+
+let mul_int_vec (i: int) (v : int list) : int list = 
+    mul_int_vec_aux i v []
+
+(* Operations between vectors *)
+
+(* Add two vectors *)
+let rec add_vecs_aux (v1: int list) (v2 : int list) (ret : int list): int list option = 
+    match v1, v2 with
+    | [], [] -> Some (rev ret)
+    | h1 :: rest1, h2 :: rest2 -> add_vecs_aux rest1 rest2 ((h1+h2) :: ret)
+    | _, _ -> None
+
+let add_vecs (v1: int list) (v2 : int list) : int list option = 
+    add_vecs_aux v1 v2 []
+
+(* Subtract two vectors *)
+let rec sub_vecs_aux (v1: int list) (v2 : int list) (ret : int list): int list option = 
+    match v1, v2 with
+    | [], [] -> Some (rev ret)
+    | h1 :: rest1, h2 :: rest2 -> sub_vecs_aux rest1 rest2 ((h1-h2) :: ret)
+    | _, _ -> None
+
+let sub_vecs (v1: int list) (v2 : int list) : int list option = 
+    sub_vecs_aux v1 v2 []
+
+(* Multiply two vectors *)
+let rec mul_vecs_aux (v1: int list) (v2 : int list) (ret : int list): int list option = 
+    match v1, v2 with
+    | [], [] -> Some (rev ret)
+    | h1 :: rest1, h2 :: rest2 -> mul_vecs_aux rest1 rest2 ((h1*h2) :: ret)
+    | _, _ -> None
+
+let mul_vecs (v1: int list) (v2 : int list) : int list option = 
+    mul_vecs_aux v1 v2 []
+
+
 (* Semantics *)
 let rec eval_exp (e : exp) (s : state) : value option =
     match e with
     | Var x -> (match lookup_state s x with Some (Val v) -> Some v | _ -> None)
     | Num i -> Some (IntVal i)
-    | Add (e1, e2) -> 
+    | Add (e1, e2) ->
         (match eval_exp e1 s, eval_exp e2 s with
         | Some (IntVal i1), Some (IntVal i2) -> Some (IntVal (i1 + i2))
+        | Some (IntVal i), Some (VecVal v) -> Some (VecVal (add_int_vec i v))
+        | Some (VecVal v), Some (IntVal i) -> Some (VecVal (add_int_vec i v))
+        | Some (VecVal v1), Some (VecVal v2) -> 
+            (match add_vecs v1 v2 with
+            | Some v -> Some (VecVal v)
+            | _ -> None)
         | _, _ -> None)
     | Sub (e1, e2) ->
         (match eval_exp e1 s, eval_exp e2 s with
         | Some (IntVal i1), Some (IntVal i2) -> Some (IntVal (i1 - i2))
+        | Some (IntVal i), Some (VecVal v) -> Some (VecVal (sub_int_vec i v))
+        | Some (VecVal v), Some (IntVal i) -> Some (VecVal (sub_int_vec i v))
         | _, _ -> None)
     | Mul (e1, e2) ->
         (match eval_exp e1 s, eval_exp e2 s with
         | Some (IntVal i1), Some (IntVal i2) -> Some (IntVal (i1 * i2))
+        | Some (IntVal i), Some (VecVal v) -> Some (VecVal (mul_int_vec i v))
+        | Some (VecVal v), Some (IntVal i) -> Some (VecVal (mul_int_vec i v))
         | _, _ -> None)
     | Bool b -> Some (BoolVal b)
     | And (e1, e2) -> 
@@ -66,6 +147,7 @@ let rec eval_exp (e : exp) (s : state) : value option =
         (match eval_exp e1 s, eval_exp e2 s with
         | Some v1, Some v2 -> Some (BoolVal (v1 = v2))
         | _, _ -> None)
+    | Vec v -> Some (VecVal v)
 
 let rec eval_exps (es : exp list) (s : state) : value list option =
     match es with
@@ -84,6 +166,8 @@ type stack = (state * ident) list
 
 type config = cmd * stack * state
 
+
+(* Function to execute a program in SILIVM *)
 let rec step_cmd (c : cmd) (k : stack) (s : state) : config option =
     match c with
     | Assign (x, e) ->
@@ -125,14 +209,20 @@ let rec run_config (con : config) : config =
 let run_prog (c : cmd) s =
   run_config (c, [], s)
 
-  (* Typechecking *)
+
+
+(* Function that returns the type of an expression *)
 let rec type_of (gamma : context) (e : exp) : typ option =
     match e with
     | Num i -> Some IntTy
     | Bool b -> Some BoolTy
+    | Vec v -> Some VecTy
     | Add (e1, e2) | Sub (e1, e2) | Mul (e1, e2) ->
         (match type_of gamma e1, type_of gamma e2 with
         | Some IntTy, Some IntTy -> Some IntTy
+        | Some IntTy, Some VecTy -> Some VecTy
+        | Some VecTy, Some IntTy -> Some VecTy
+        | Some VecTy, Some VecTy -> Some VecTy
         | _, _ -> None)
     | And (e1, e2) | Or (e1, e2) -> 
         (match type_of gamma e1, type_of gamma e2 with
@@ -142,6 +232,7 @@ let rec type_of (gamma : context) (e : exp) : typ option =
         (match type_of gamma e1, type_of gamma e2 with
         | Some IntTy, Some IntTy -> Some BoolTy
         | Some BoolTy, Some BoolTy -> Some BoolTy
+        | Some VecTy, Some VecTy -> Some BoolTy
         | _, _ -> None)
     | Var x -> lookup_context gamma x
 
@@ -153,11 +244,15 @@ let rec type_of_exps (gamma : context) (es : exp list) : typ list option =
         | Some t, Some ts -> Some (t :: ts)
         | _, _ -> None)
 
-(* Extremely simple typechecker for expressions *)
+
+
+(* TExpressions typechecker *)
 let typecheck_exp (gamma : context) (e : exp) : bool =
     match type_of gamma e with
     | None -> false
-    |_ -> true
+    | _ -> true
+
+
 
 (* Simple helper function to compare two type lists *)
 let rec compare_ty_lists (gamma : context) (l1: typ list) (l2 : typ list) : bool =
@@ -168,6 +263,8 @@ let rec compare_ty_lists (gamma : context) (l1: typ list) (l2 : typ list) : bool
         else false)
     | _, _ -> false
 
+
+(* Commands Typechecker*)
 let rec typecheck_cmd (gamma : context) (c : cmd) : bool =
     match c with
     | Assign (i, e) ->
