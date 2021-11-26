@@ -2,7 +2,6 @@ open List
 
 (* controllare type_of_exps *)
 (* Next steps:
-    - Fix return typecheck
     - Extensive Testing!!!!!
     - Matrices
 *)
@@ -11,7 +10,7 @@ type ident = string
 
 type exp = Var of ident | Num of int | Bool of bool | Vec of int list
          | Add of exp * exp | Sub of exp * exp | Mul of exp * exp
-         | And of exp * exp | Or of exp * exp | Eq of exp * exp 
+         | And of exp * exp | Or of exp * exp | Eq of exp * exp
 
 type cmd = Assign of ident * exp | Seq of cmd * cmd | Skip
          | IfC of exp * cmd * cmd | While of exp * cmd
@@ -47,64 +46,32 @@ let val_at_idx (Vec v) (idx : int) : int option = nth_opt v idx
 
 (* Mixed operations between integers and vectors *)
 
-(* Addition integer vector *)
-let rec add_int_vec_aux (i: int) (v : int list) (ret : int list): int list = 
+let rec int_vec_op_aux (i: int) (v: int list) (ret : int list) (t: string) : int list option =
     match v with
-    | [] -> rev ret
-    | h :: rest -> add_int_vec_aux i rest ((h+i) :: ret)
+    | [] -> Some (rev ret)
+    | h :: rest -> 
+        if      t = "add" then int_vec_op_aux i rest ((h+i) :: ret) t
+        else if t = "sub" then int_vec_op_aux i rest ((h-i) :: ret) t
+        else if t = "mul" then int_vec_op_aux i rest ((h*i) :: ret) t
+        else None
 
-let add_int_vec (i: int) (v : int list) : int list = 
-    add_int_vec_aux i v []
-
-(* Subtraction integer vector *)
-let rec sub_int_vec_aux (i: int) (v : int list) (ret : int list): int list = 
-    match v with
-    | [] -> rev ret
-    | h :: rest -> sub_int_vec_aux i rest ((h-i) :: ret)
-
-let sub_int_vec (i: int) (v : int list) : int list = 
-    sub_int_vec_aux i v []
-
-(* Multiplication integer vector *)
-let rec mul_int_vec_aux (i: int) (v : int list) (ret : int list): int list = 
-    match v with
-    | [] -> rev ret
-    | h :: rest -> mul_int_vec_aux i rest ((h*i) :: ret)
-
-let mul_int_vec (i: int) (v : int list) : int list = 
-    mul_int_vec_aux i v []
+let int_vec_op (i: int) (v: int list) (t: string) : int list option =
+    int_vec_op_aux i v [] t
 
 (* Operations between vectors *)
 
-(* Add two vectors *)
-let rec add_vecs_aux (v1: int list) (v2 : int list) (ret : int list): int list option = 
+let rec vecs_op_aux (v1: int list) (v2 : int list) (ret : int list) (t: string): int list option = 
     match v1, v2 with
     | [], [] -> Some (rev ret)
-    | h1 :: rest1, h2 :: rest2 -> add_vecs_aux rest1 rest2 ((h1+h2) :: ret)
+    | h1 :: rest1, h2 :: rest2 ->
+        if      t = "add" then vecs_op_aux rest1 rest2 ((h1+h2) :: ret) t
+        else if t = "sub" then vecs_op_aux rest1 rest2 ((h1-h2) :: ret) t
+        else if t = "mul" then vecs_op_aux rest1 rest2 ((h1*h2) :: ret) t
+        else None
     | _, _ -> None
 
-let add_vecs (v1: int list) (v2 : int list) : int list option = 
-    add_vecs_aux v1 v2 []
-
-(* Subtract two vectors *)
-let rec sub_vecs_aux (v1: int list) (v2 : int list) (ret : int list): int list option = 
-    match v1, v2 with
-    | [], [] -> Some (rev ret)
-    | h1 :: rest1, h2 :: rest2 -> sub_vecs_aux rest1 rest2 ((h1-h2) :: ret)
-    | _, _ -> None
-
-let sub_vecs (v1: int list) (v2 : int list) : int list option = 
-    sub_vecs_aux v1 v2 []
-
-(* Multiply two vectors *)
-let rec mul_vecs_aux (v1: int list) (v2 : int list) (ret : int list): int list option = 
-    match v1, v2 with
-    | [], [] -> Some (rev ret)
-    | h1 :: rest1, h2 :: rest2 -> mul_vecs_aux rest1 rest2 ((h1*h2) :: ret)
-    | _, _ -> None
-
-let mul_vecs (v1: int list) (v2 : int list) : int list option = 
-    mul_vecs_aux v1 v2 []
+let vecs_op (v1: int list) (v2 : int list) (t: string): int list option = 
+    vecs_op_aux v1 v2 [] t
 
 
 (* Semantics *)
@@ -115,24 +82,38 @@ let rec eval_exp (e : exp) (s : state) : value option =
     | Add (e1, e2) ->
         (match eval_exp e1 s, eval_exp e2 s with
         | Some (IntVal i1), Some (IntVal i2) -> Some (IntVal (i1 + i2))
-        | Some (IntVal i), Some (VecVal v) -> Some (VecVal (add_int_vec i v))
-        | Some (VecVal v), Some (IntVal i) -> Some (VecVal (add_int_vec i v))
+        | Some (IntVal i), Some (VecVal v) | Some (VecVal v), Some (IntVal i) ->
+            (match int_vec_op i v "add" with
+            | Some v -> Some (VecVal v)
+            | _ -> None)
         | Some (VecVal v1), Some (VecVal v2) -> 
-            (match add_vecs v1 v2 with
+            (match vecs_op v1 v2 "add" with
             | Some v -> Some (VecVal v)
             | _ -> None)
         | _, _ -> None)
     | Sub (e1, e2) ->
         (match eval_exp e1 s, eval_exp e2 s with
         | Some (IntVal i1), Some (IntVal i2) -> Some (IntVal (i1 - i2))
-        | Some (IntVal i), Some (VecVal v) -> Some (VecVal (sub_int_vec i v))
-        | Some (VecVal v), Some (IntVal i) -> Some (VecVal (sub_int_vec i v))
+        | Some (IntVal i), Some (VecVal v) | Some (VecVal v), Some (IntVal i) ->
+            (match int_vec_op i v "sub" with
+            | Some v -> Some (VecVal v)
+            | _ -> None)
+        | Some (VecVal v1), Some (VecVal v2) -> 
+            (match vecs_op v1 v2 "sub" with
+            | Some v -> Some (VecVal v)
+            | _ -> None)
         | _, _ -> None)
     | Mul (e1, e2) ->
         (match eval_exp e1 s, eval_exp e2 s with
         | Some (IntVal i1), Some (IntVal i2) -> Some (IntVal (i1 * i2))
-        | Some (IntVal i), Some (VecVal v) -> Some (VecVal (mul_int_vec i v))
-        | Some (VecVal v), Some (IntVal i) -> Some (VecVal (mul_int_vec i v))
+        | Some (IntVal i), Some (VecVal v) | Some (VecVal v), Some (IntVal i) ->
+            (match int_vec_op i v "mul" with
+            | Some v -> Some (VecVal v)
+            | _ -> None)
+        | Some (VecVal v1), Some (VecVal v2) -> 
+            (match vecs_op v1 v2 "mul" with
+            | Some v -> Some (VecVal v)
+            | _ -> None)
         | _, _ -> None)
     | Bool b -> Some (BoolVal b)
     | And (e1, e2) -> 
@@ -246,7 +227,7 @@ let rec type_of_exps (gamma : context) (es : exp list) : typ list option =
 
 
 
-(* TExpressions typechecker *)
+(* Expressions typechecker *)
 let typecheck_exp (gamma : context) (e : exp) : bool =
     match type_of gamma e with
     | None -> false
@@ -277,9 +258,9 @@ let rec typecheck_cmd (gamma : context) (c : cmd) : bool =
     | Seq (c1, c2) -> typecheck_cmd gamma c1 && typecheck_cmd gamma c2
     | Skip -> true
     | Return e -> 
-        (match type_of gamma e with
-        | Some t -> true
-        | _ -> false)
+        (match gamma "__ret", type_of gamma e with
+        | Some t1, Some t2 -> if t1 = t2 then true else false
+        | _, _ -> false)
     |IfC (cond, c1, c2) ->
         (match type_of gamma cond with
         | Some (BoolTy) -> (typecheck_cmd gamma c1) && (typecheck_cmd gamma c2)
