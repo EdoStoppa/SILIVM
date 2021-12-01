@@ -1,5 +1,5 @@
-(* Expression typechecking tests*)
-(* Tests function type_of that does all the work in the typechecking of expressions*)
+(* Expression typechecking tests *)
+(* Tests function type_of that does all the work in the typechecking of expressions *)
 
 (* Tests for Add, Sub, and Mul *)
 let add_0 = type_of empty_context (Add (Num 1, Num 2)) (* Shoul return Some IntTy *)

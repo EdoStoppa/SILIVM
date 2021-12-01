@@ -79,6 +79,8 @@ let rec eval_exp (e : exp) (s : state) : value option =
     match e with
     | Var x -> (match lookup_state s x with Some (Val v) -> Some v | _ -> None)
     | Num i -> Some (IntVal i)
+    | Vec v -> Some (VecVal v)
+    | Bool b -> Some (BoolVal b)
     | Add (e1, e2) ->
         (match eval_exp e1 s, eval_exp e2 s with
         | Some (IntVal i1), Some (IntVal i2) -> Some (IntVal (i1 + i2))
@@ -115,7 +117,6 @@ let rec eval_exp (e : exp) (s : state) : value option =
             | Some v -> Some (VecVal v)
             | _ -> None)
         | _, _ -> None)
-    | Bool b -> Some (BoolVal b)
     | And (e1, e2) -> 
         (match eval_exp e1 s, eval_exp e2 s with
         | Some (BoolVal b1), Some (BoolVal b2) -> Some (BoolVal (b1 && b2))
@@ -128,7 +129,6 @@ let rec eval_exp (e : exp) (s : state) : value option =
         (match eval_exp e1 s, eval_exp e2 s with
         | Some v1, Some v2 -> Some (BoolVal (v1 = v2))
         | _, _ -> None)
-    | Vec v -> Some (VecVal v)
 
 let rec eval_exps (es : exp list) (s : state) : value list option =
     match es with
